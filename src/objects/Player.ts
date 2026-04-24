@@ -6,6 +6,8 @@ type TouchInput = { left: boolean; right: boolean; jump: boolean };
 const CHAR_ORIG_W = 474;
 const CHAR_ORIG_H = 632;
 const DISPLAY_SCALE = PLAYER_DISPLAY_H / CHAR_ORIG_H;
+// 攀爬时的缩放比例（比正常稍小）
+const CLIMB_SCALE = 0.8;
 // 碰撞体参数（源像素 = 帧坐标，Phaser setSize/setOffset 使用此坐标系）
 const BODY_W = Math.round(28 / DISPLAY_SCALE);  // 显示28px → ≈277源像素
 const BODY_H = Math.round(48 / DISPLAY_SCALE);  // 显示48px → ≈474源像素
@@ -21,6 +23,8 @@ export class Player extends Physics.Arcade.Sprite {
   private nearLadder = false;
   private ladderCenterX = 0;
   private ladderTopY = 0;
+  private ladderVisualTopY = 0;  // 虚拟延伸顶部
+  private climbAnimTimer = 0;  // 攀爬动画计时器
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
     super(scene, x, y, 'player');
@@ -36,11 +40,12 @@ export class Player extends Physics.Arcade.Sprite {
     this.play('player_idle');
   }
 
-  setNearLadder(near: boolean, ladderX: number, topY?: number) {
+  setNearLadder(near: boolean, ladderX: number, topY?: number, visualTopY?: number) {
     this.nearLadder = near;
     if (near) {
       this.ladderCenterX = ladderX;
       if (topY !== undefined) this.ladderTopY = topY;
+      if (visualTopY !== undefined) this.ladderVisualTopY = visualTopY;
     }
     if (!near && this.climbing) {
       this.exitLadder();
@@ -71,21 +76,57 @@ export class Player extends Physics.Arcade.Sprite {
     }
 
     const delta = this.scene.game.loop.delta;
+    const bodyBottom = this.y + this.getHalfBodyH();
+    // 判断是否在虚拟延伸区域（超过实际梯子顶部）
+    const inVirtualZone = bodyBottom < this.ladderTopY;
+
+    // 虚拟区域恢复正常缩放，非虚拟区域保持攀爬缩小
+    if (inVirtualZone) {
+      this.setScale(DISPLAY_SCALE);
+    } else {
+      this.setScale(DISPLAY_SCALE * CLIMB_SCALE);
+    }
+
     if (upPressed) {
       this.y -= PLAYER_CLIMB_SPEED * delta / 1000;
+      // 虚拟区域显示站立，实体区域播放攀爬动画
+      if (inVirtualZone) {
+        this.setFrame(0);  // 站立帧
+      } else {
+        this.climbAnimTimer += delta;
+        if (this.climbAnimTimer >= 250) {
+          this.climbAnimTimer = 0;
+          const currentFrame = this.frame.name as number;
+          this.setFrame(currentFrame === 3 ? 4 : 3);
+        }
+      }
     } else if (downPressed) {
       this.y += PLAYER_CLIMB_SPEED * delta / 1000;
+      this.climbAnimTimer = 0;
+      // 下移时根据位置显示对应帧
+      if (inVirtualZone) {
+        this.setFrame(0);  // 站立帧
+      } else {
+        this.setFrame(3);  // 攀爬1
+      }
+    } else {
+      this.climbAnimTimer = 0;
+      // 停止时根据位置显示对应帧
+      if (inVirtualZone) {
+        this.setFrame(0);  // 站立帧
+      } else {
+        this.setFrame(3);  // 攀爬1
+      }
     }
 
     this.x = this.ladderCenterX;
 
-    const bodyBottom = this.y + this.getHalfBodyH();
-    if (bodyBottom <= this.ladderTopY) {
-      this.y = this.ladderTopY - this.getHalfBodyH();
+    // 到达虚拟顶部时退出梯子
+    const newBodyBottom = this.y + this.getHalfBodyH();
+    if (newBodyBottom <= this.ladderVisualTopY) {
+      this.y = this.ladderVisualTopY - this.getHalfBodyH();
       this.exitLadder();
     }
-
-    this.play('player_idle', true);
   }
 
   private updateNormal(cursors: Phaser.Types.Input.Keyboard.CursorKeys, spaceKey: Phaser.Input.Keyboard.Key) {
@@ -138,6 +179,9 @@ export class Player extends Physics.Arcade.Sprite {
     body.setVelocity(0, 0);
     body.enable = false;
     this.x = this.ladderCenterX;
+    // 攀爬时缩小
+    this.setScale(DISPLAY_SCALE * CLIMB_SCALE);
+    this.setFrame(3);  // 默认用攀爬1
   }
 
   private exitLadder() {
@@ -146,6 +190,8 @@ export class Player extends Physics.Arcade.Sprite {
     body.enable = true;
     body.setAllowGravity(true);
     body.setVelocity(0, 0);
+    // 恢复正常缩放
+    this.setScale(DISPLAY_SCALE);
   }
 
   setTouchInput(direction: 'left' | 'right' | 'jump', active: boolean) {
@@ -168,7 +214,8 @@ export class Player extends Physics.Arcade.Sprite {
 
   // 碰撞体底部相对 sprite 中心的距离（用于爬梯着地计算）
   private getHalfBodyH(): number {
-    return (BODY_OFFSET_Y + BODY_H - CHAR_ORIG_H / 2) * DISPLAY_SCALE;
+    const scale = this.climbing ? DISPLAY_SCALE * CLIMB_SCALE : DISPLAY_SCALE;
+    return (BODY_OFFSET_Y + BODY_H - CHAR_ORIG_H / 2) * scale;
   }
 
   private getBody(): Phaser.Physics.Arcade.Body {

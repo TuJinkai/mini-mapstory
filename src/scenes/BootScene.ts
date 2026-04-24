@@ -45,6 +45,8 @@ export class BootScene extends Scene {
     this.load.image('char_stand', 'src/assets/images/stand_left.png');
     this.load.image('char_run', 'src/assets/images/run_left.png');
     this.load.image('char_run_end', 'src/assets/images/run_end_left.png');
+    this.load.image('char_climb1', 'src/assets/images/climb1.png');
+    this.load.image('char_climb2', 'src/assets/images/climb2.png');
   }
 
   create() {
@@ -53,13 +55,13 @@ export class BootScene extends Scene {
   }
 
   private createPlayerAnimations() {
-    // 用3张图拼成一个 spritesheet 作为动画帧
+    // 用5张图拼成一个 spritesheet 作为动画帧
     // 素材 474x632，取合理裁剪区域后缩放
     const srcW = 474;
     const srcH = 632;
     const frameW = srcW;
     const frameH = srcH;
-    const totalFrames = 3;
+    const totalFrames = 5;
 
     const canvas = document.createElement('canvas');
     canvas.width = frameW * totalFrames;
@@ -67,11 +69,11 @@ export class BootScene extends Scene {
     const ctx = canvas.getContext('2d')!;
 
     // 从已加载的纹理中提取像素绘制到 canvas
-    const keys = ['char_stand', 'char_run', 'char_run_end'];
+    const keys = ['char_stand', 'char_run', 'char_run_end', 'char_climb1', 'char_climb2'];
     for (let i = 0; i < keys.length; i++) {
       const tex = this.textures.get(keys[i]);
       const src = tex.getSourceImage() as HTMLImageElement;
-      ctx.drawImage(src, i * frameW, 0);
+      ctx.drawImage(src, i * frameW, 0, frameW, frameH);
     }
 
     const texture = this.textures.addCanvas('player', canvas)!;
@@ -95,6 +97,12 @@ export class BootScene extends Scene {
       key: 'player_jump',
       frames: this.anims.generateFrameNumbers('player', { start: 1, end: 1 }),
       frameRate: 8,
+      repeat: -1,
+    });
+    this.anims.create({
+      key: 'player_climb',
+      frames: this.anims.generateFrameNumbers('player', { start: 3, end: 4 }),
+      frameRate: 4,
       repeat: -1,
     });
   }

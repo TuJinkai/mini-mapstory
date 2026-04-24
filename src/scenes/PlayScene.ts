@@ -4,7 +4,8 @@ import { GAME_WIDTH, GAME_HEIGHT, WORLD_WIDTH } from '../utils/constants';
 
 interface LadderZone {
   x: number;
-  topY: number;
+  topY: number;       // 梯子实际顶部
+  visualTopY: number; // 虚拟延伸顶部（角色在此范围内隐藏攀爬显示）
   bottomY: number;
   halfWidth: number;
 }
@@ -56,11 +57,12 @@ export class PlayScene extends Scene {
     let found = false;
     let nearestX = 0;
     let nearestTopY = 0;
+    let nearestVisualTopY = 0;
     let minDist = Infinity;
 
     for (const z of this.ladderZones) {
       const inX = Math.abs(px - z.x) < z.halfWidth + 10;
-      const inY = py > z.topY - 30 && py < z.bottomY + 20;
+      const inY = py > z.visualTopY - 30 && py < z.bottomY + 20;
       if (inX && inY) {
         found = true;
         const d = Math.abs(px - z.x);
@@ -68,11 +70,12 @@ export class PlayScene extends Scene {
           minDist = d;
           nearestX = z.x;
           nearestTopY = z.topY;
+          nearestVisualTopY = z.visualTopY;
         }
       }
     }
 
-    this.player.setNearLadder(found, nearestX, nearestTopY);
+    this.player.setNearLadder(found, nearestX, nearestTopY, nearestVisualTopY);
   }
 
   private createPlatforms() {
@@ -130,9 +133,13 @@ export class PlayScene extends Scene {
       const sprite = this.add.image(l.x, centerY, 'tizi01');
       sprite.setDisplaySize(ladderWidth, height);
 
+      // 虚拟延伸顶部（比实际顶部高14像素，让角色能爬到平台上）
+      const visualTopY = l.topY - 14;
+
       this.ladderZones.push({
         x: l.x,
         topY: l.topY,
+        visualTopY: visualTopY,
         bottomY: l.bottomY,
         halfWidth: 15,
       });

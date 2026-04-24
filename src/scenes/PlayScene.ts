@@ -16,13 +16,10 @@ interface LadderZone {
 }
 
 const SPAWN_POINTS: SpawnPoint[] = [
-  // 地面怪物（y=418 = 地面顶部 y=442 - 碰撞体半高 24）
-  { x: 300, y: 418, monsterType: 'pig', respawnTime: 5000, id: 'pig1' },
-  { x: 500, y: 418, monsterType: 'pig', respawnTime: 5000, id: 'pig2' },
-  { x: 700, y: 418, monsterType: 'pig', respawnTime: 6000, id: 'pig3' },
-  // 平台怪物（y = 平台顶部 - 碰撞体半高32）
-  { x: 200, y: 120, monsterType: 'pig', respawnTime: 6000, id: 'pig4' },  // 平台顶部 y=152
-  { x: 450, y: 82, monsterType: 'pig', respawnTime: 8000, id: 'pig5' },   // 平台顶部 y=114
+  // 地面怪物
+  { x: 300, y: 410, monsterType: 'pig', respawnTime: 5000, id: 'pig1' },
+  { x: 500, y: 410, monsterType: 'pig', respawnTime: 5000, id: 'pig2' },
+  { x: 700, y: 410, monsterType: 'pig', respawnTime: 6000, id: 'pig3' },
 ];
 
 export class PlayScene extends Scene {
@@ -76,12 +73,12 @@ export class PlayScene extends Scene {
     // 碰撞：怪物与平台
     this.physics.add.collider(this.monsterSpawner.getMonsterGroup(), this.platforms);
 
-    // 碰撞：怪物与玩家（怪物接触玩家时造成伤害）
+    // 碰撞：怪物与玩家（怪物接触玩家时造成伤害，有冷却）
     this.physics.add.overlap(
       this.player,
       this.monsterSpawner.getMonsterGroup(),
       (_player, monster) => {
-        if (this.player.isAlive() && (monster as Monster).isAlive()) {
+        if (this.player.isAlive() && (monster as Monster).canHitPlayer()) {
           this.combatSystem.monsterAttack(monster as Monster);
         }
       }

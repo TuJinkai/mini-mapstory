@@ -24,6 +24,7 @@ export class Monster extends Physics.Arcade.Sprite {
   private patrolDirection: number = 1;
   private patrolPauseTimer: number = 0;
   private lastAttackTime: number = 0;
+  private lastPlayerHitTime: number = 0;
   private isHurt: boolean = false;
   private hurtTimer: number = 0;
   private spawnTime: number = 0;
@@ -109,6 +110,17 @@ export class Monster extends Physics.Arcade.Sprite {
         this.flee(player);
         break;
     }
+  }
+
+  // 检查是否能伤害玩家（攻击冷却）
+  canHitPlayer(): boolean {
+    const now = this.scene.time.now;
+    const cooldown = this.stats.attackCooldown || 1500;
+    if (now - this.lastPlayerHitTime < cooldown) {
+      return false;
+    }
+    this.lastPlayerHitTime = now;
+    return true;
   }
 
   private patrol(): void {

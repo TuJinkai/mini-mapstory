@@ -38,15 +38,15 @@ export class BootScene extends Scene {
       text.destroy();
     });
 
-    this.load.image('bg001', 'src/assets/images/bg001.png');
-    this.load.image('pt001', 'src/assets/images/pt001.png');
-    this.load.image('pt002', 'src/assets/images/pt002.png');
-    this.load.image('tizi01', 'src/assets/images/tizi01.png');
-    this.load.image('char_stand', 'src/assets/images/stand_left.png');
-    this.load.image('char_run', 'src/assets/images/run_left.png');
-    this.load.image('char_run_end', 'src/assets/images/run_end_left.png');
-    this.load.image('char_climb1', 'src/assets/images/climb1.png');
-    this.load.image('char_climb2', 'src/assets/images/climb2.png');
+    this.load.image('bg001', 'assets/images/bg001.png');
+    this.load.image('pt001', 'assets/images/pt001.png');
+    this.load.image('pt002', 'assets/images/pt002.png');
+    this.load.image('tizi01', 'assets/images/tizi01.png');
+    this.load.image('char_stand', 'assets/images/stand_left.png');
+    this.load.image('char_run', 'assets/images/run_left.png');
+    this.load.image('char_run_end', 'assets/images/run_end_left.png');
+    this.load.image('char_climb1', 'assets/images/climb1.png');
+    this.load.image('char_climb2', 'assets/images/climb2.png');
   }
 
   create() {

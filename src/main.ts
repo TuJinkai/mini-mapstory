@@ -18,8 +18,8 @@ const config: Types.Core.GameConfig = {
     },
   },
   scale: {
-    mode: Phaser.Scale.FIT,
-    autoCenter: Phaser.Scale.CENTER_BOTH,
+    mode: Phaser.Scale.NONE,
+    resizeInterval: 0,
   },
   scene: [BootScene, PlayScene, UIScene],
 };

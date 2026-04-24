@@ -96,7 +96,7 @@ export class Player extends Physics.Arcade.Sprite {
         this.climbAnimTimer += delta;
         if (this.climbAnimTimer >= 250) {
           this.climbAnimTimer = 0;
-          const currentFrame = this.frame.name as number;
+          const currentFrame = parseInt(this.frame.name, 10);
           this.setFrame(currentFrame === 3 ? 4 : 3);
         }
       }

@@ -1,14 +1,29 @@
 import { Scene } from 'phaser';
 import { Player } from '../objects/Player';
-import { GAME_WIDTH, GAME_HEIGHT, WORLD_WIDTH } from '../utils/constants';
+import { Monster } from '../objects/Monster';
+import { CombatSystem } from '../systems/CombatSystem';
+import { DamageNumber } from '../systems/DamageNumber';
+import { ExpSystem } from '../systems/ExpSystem';
+import { MonsterSpawner, SpawnPoint } from '../systems/MonsterSpawner';
+import { GAME_WIDTH, GAME_HEIGHT, WORLD_WIDTH, MP_REGEN_RATE, MP_REGEN_INTERVAL } from '../utils/constants';
 
 interface LadderZone {
   x: number;
-  topY: number;       // 梯子实际顶部
-  visualTopY: number; // 虚拟延伸顶部（角色在此范围内隐藏攀爬显示）
+  topY: number;
+  visualTopY: number;
   bottomY: number;
   halfWidth: number;
 }
+
+const SPAWN_POINTS: SpawnPoint[] = [
+  // 地面怪物（y=418 = 地面顶部 y=442 - 碰撞体半高 24）
+  { x: 300, y: 418, monsterType: 'pig', respawnTime: 5000, id: 'pig1' },
+  { x: 500, y: 418, monsterType: 'pig', respawnTime: 5000, id: 'pig2' },
+  { x: 700, y: 418, monsterType: 'pig', respawnTime: 6000, id: 'pig3' },
+  // 平台怪物（y = 平台顶部 - 碰撞体半高32）
+  { x: 200, y: 120, monsterType: 'pig', respawnTime: 6000, id: 'pig4' },  // 平台顶部 y=152
+  { x: 450, y: 82, monsterType: 'pig', respawnTime: 8000, id: 'pig5' },   // 平台顶部 y=114
+];
 
 export class PlayScene extends Scene {
   private player!: Player;
@@ -16,13 +31,20 @@ export class PlayScene extends Scene {
   private ladderZones: LadderZone[] = [];
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private spaceKey!: Phaser.Input.Keyboard.Key;
+  private zKey!: Phaser.Input.Keyboard.Key;
+  private xKey!: Phaser.Input.Keyboard.Key;
+
+  private combatSystem!: CombatSystem;
+  private monsterSpawner!: MonsterSpawner;
+  private expSystem!: ExpSystem;
+  private damageNumber!: DamageNumber;
+  private lastMpRegenTime: number = 0;
 
   constructor() {
     super('PlayScene');
   }
 
   create() {
-    // 背景图：1774x887，缩放到游戏高度并铺满世界宽度
     const bg = this.add.image(0, 0, 'bg001');
     bg.setOrigin(0, 0);
     const bgScale = GAME_HEIGHT / 887;
@@ -37,18 +59,124 @@ export class PlayScene extends Scene {
 
     this.cursors = this.input.keyboard!.createCursorKeys();
     this.spaceKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+    this.zKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Z);
+    this.xKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.X);
+
+    // 战斗系统初始化
+    this.damageNumber = new DamageNumber(this);
+    this.combatSystem = new CombatSystem(this, this.player, this.damageNumber);
+    this.expSystem = new ExpSystem(this, this.player);
+
+    // 先注册事件监听器，再初始化怪物生成器（避免事件先触发但监听器未注册）
+    this.setupCombatEvents();
+
+    this.monsterSpawner = new MonsterSpawner(this, this.player, SPAWN_POINTS);
+    this.monsterSpawner.init();
+
+    // 碰撞：怪物与平台
+    this.physics.add.collider(this.monsterSpawner.getMonsterGroup(), this.platforms);
+
+    // 碰撞：怪物与玩家（怪物接触玩家时造成伤害）
+    this.physics.add.overlap(
+      this.player,
+      this.monsterSpawner.getMonsterGroup(),
+      (_player, monster) => {
+        if (this.player.isAlive() && (monster as Monster).isAlive()) {
+          this.combatSystem.monsterAttack(monster as Monster);
+        }
+      }
+    );
+
+    this.createTouchControls();
 
     this.scene.launch('UIScene');
 
     this.cameras.main.setBounds(0, 0, WORLD_WIDTH, GAME_HEIGHT);
     this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
 
-    this.createTouchControls();
+    // 初始通知UIScene
+    this.time.delayedCall(100, () => {
+      this.updateUIScene();
+    });
   }
 
-  update() {
+  update(time: number) {
     this.checkLadderProximity();
     this.player.update(this.cursors, this.spaceKey);
+    this.monsterSpawner.update(time);
+
+    // 键盘攻击
+    if (Phaser.Input.Keyboard.JustDown(this.zKey)) {
+      this.combatSystem.playerAttack('normalAttack');
+    }
+    if (Phaser.Input.Keyboard.JustDown(this.xKey)) {
+      this.combatSystem.playerAttack('powerStrike');
+    }
+
+    // MP自然回复
+    if (time - this.lastMpRegenTime >= MP_REGEN_INTERVAL) {
+      this.lastMpRegenTime = time;
+      this.player.regenMp(MP_REGEN_RATE);
+      this.updateUIScene();
+    }
+  }
+
+  private setupCombatEvents(): void {
+    // 玩家受伤
+    this.events.on('player-hurt', () => {
+      this.updateUIScene();
+    });
+
+    // 怪物死亡 → 给经验 + 通知刷新器
+    this.events.on('monster-death', (monster: Monster) => {
+      const exp = monster.getExpReward();
+      const leveledUp = this.expSystem.addExp(exp);
+
+      // 显示经验数字
+      this.damageNumber.show(monster.x, monster.y - 20, exp, false, false);
+
+      // 从战斗系统移除
+      this.combatSystem.removeMonster(monster);
+      this.monsterSpawner.removeDeadMonster(monster);
+
+      this.updateUIScene();
+    });
+
+    // 升级事件
+    this.events.on('level-up', () => {
+      this.updateUIScene();
+      this.scene.get('UIScene').events.emit('show-level-up');
+    });
+
+    // 经验获得
+    this.events.on('exp-gained', () => {
+      this.updateUIScene();
+    });
+
+    // 玩家属性更新（技能消耗MP等）
+    this.events.on('player-stats-update', () => {
+      this.updateUIScene();
+    });
+
+    // 怪物生成
+    this.events.on('monster-spawned', (monster: Monster) => {
+      this.combatSystem.addMonster(monster);
+    });
+  }
+
+  private updateUIScene(): void {
+    const stats = this.player.getStats();
+    const expInfo = this.expSystem.getExpInfo();
+
+    this.scene.get('UIScene').events.emit('update-stats', {
+      hp: stats.hp,
+      maxHp: stats.maxHp,
+      mp: stats.mp,
+      maxMp: stats.maxMp,
+      level: expInfo.level,
+      exp: expInfo.exp,
+      expToNext: expInfo.expToNext,
+    });
   }
 
   private checkLadderProximity() {
@@ -81,14 +209,11 @@ export class PlayScene extends Scene {
   private createPlatforms() {
     this.platforms = this.physics.add.staticGroup();
 
-    // 全局地面（不可见，仅碰撞）
     const ground = this.platforms.create(WORLD_WIDTH / 2, GAME_HEIGHT - 8, 'pt001')
       .setDisplaySize(WORLD_WIDTH, 16)
       .refreshBody();
     ground.setVisible(false);
 
-    // 浮动平台，每个指定显示宽高
-    // offsetY: 碰撞体从精灵顶部向下偏移，让站立面低于视觉顶部
     const platformData: { x: number; y: number; w: number; h: number; offsetY: number }[] = [
       { x: 120, y: 300, w: 120, h: 40, offsetY: 10 },
       { x: 350, y: 240, w: 100, h: 36, offsetY: 10 },
@@ -96,7 +221,6 @@ export class PlayScene extends Scene {
       { x: 200, y: 170, w: 100, h: 36, offsetY: 10 },
       { x: 450, y: 130, w: 110, h: 36, offsetY: 10 },
       { x: 680, y: 180, w: 100, h: 36, offsetY: 10 },
-      // 右半区
       { x: 750, y: 280, w: 120, h: 40, offsetY: 10 },
       { x: 850, y: 200, w: 100, h: 36, offsetY: 10 },
     ];
@@ -112,14 +236,12 @@ export class PlayScene extends Scene {
 
   private createLadders() {
     const ladderData = [
-      // 左半区
       { x: 120, bottomY: 434, topY: 292 },
       { x: 580, bottomY: 434, topY: 292 },
       { x: 350, bottomY: 292, topY: 232 },
       { x: 200, bottomY: 292, topY: 162 },
       { x: 450, bottomY: 232, topY: 122 },
       { x: 680, bottomY: 172, topY: 122 },
-      // 右半区
       { x: 750, bottomY: 434, topY: 272 },
       { x: 850, bottomY: 272, topY: 192 },
     ];
@@ -128,12 +250,10 @@ export class PlayScene extends Scene {
       const height = l.bottomY - l.topY;
       const centerY = l.topY + height / 2;
 
-      // 梯子宽度按素材比例动态计算，高度拉伸到实际间距
       const ladderWidth = Math.round(169 * height / 866);
       const sprite = this.add.image(l.x, centerY, 'tizi01');
       sprite.setDisplaySize(ladderWidth, height);
 
-      // 虚拟延伸顶部（比实际顶部高14像素，让角色能爬到平台上）
       const visualTopY = l.topY - 14;
 
       this.ladderZones.push({
@@ -149,6 +269,7 @@ export class PlayScene extends Scene {
   private createTouchControls() {
     const buttonY = GAME_HEIGHT - 50;
 
+    // 方向键
     const leftBtn = this.add.circle(50, buttonY, 28, 0xffffff, 0.15)
       .setScrollFactor(0).setDepth(100).setInteractive();
     this.add.text(50, buttonY, '◀', { fontSize: '20px', color: '#ffffff' })
@@ -159,20 +280,45 @@ export class PlayScene extends Scene {
     this.add.text(130, buttonY, '▶', { fontSize: '20px', color: '#ffffff' })
       .setOrigin(0.5).setScrollFactor(0).setDepth(101);
 
-    const jumpBtn = this.add.circle(GAME_WIDTH - 60, buttonY, 32, 0x6c63ff, 0.3)
+    // 向上按钮（爬梯子）
+    const upBtn = this.add.circle(90, buttonY - 45, 24, 0x44aa44, 0.3)
       .setScrollFactor(0).setDepth(100).setInteractive();
-    this.add.text(GAME_WIDTH - 60, buttonY, '▲', { fontSize: '22px', color: '#ffffff' })
+    this.add.text(90, buttonY - 45, '▲', { fontSize: '18px', color: '#ffffff' })
       .setOrigin(0.5).setScrollFactor(0).setDepth(101);
 
+    const jumpBtn = this.add.circle(GAME_WIDTH - 130, buttonY, 32, 0x6c63ff, 0.3)
+      .setScrollFactor(0).setDepth(100).setInteractive();
+    this.add.text(GAME_WIDTH - 130, buttonY, '▲', { fontSize: '22px', color: '#ffffff' })
+      .setOrigin(0.5).setScrollFactor(0).setDepth(101);
+
+    // 普攻按钮
+    const attackBtn = this.add.circle(GAME_WIDTH - 55, buttonY, 28, 0xff4444, 0.4)
+      .setScrollFactor(0).setDepth(100).setInteractive();
+    this.add.text(GAME_WIDTH - 55, buttonY, 'ATK', {
+      fontSize: '11px', color: '#ffffff', fontStyle: 'bold',
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(101);
+
+    // 重击按钮
+    const skillBtn = this.add.circle(GAME_WIDTH - 55, buttonY - 60, 24, 0xffaa00, 0.4)
+      .setScrollFactor(0).setDepth(100).setInteractive();
+    this.add.text(GAME_WIDTH - 55, buttonY - 60, 'SKL', {
+      fontSize: '10px', color: '#ffffff', fontStyle: 'bold',
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(101);
+
+    // 触摸事件
     this.input.on('gameobjectdown', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject) => {
       if (gameObject === leftBtn) this.player.setTouchInput('left', true);
       if (gameObject === rightBtn) this.player.setTouchInput('right', true);
+      if (gameObject === upBtn) this.cursors.up.isDown = true;
       if (gameObject === jumpBtn) this.player.setTouchInput('jump', true);
+      if (gameObject === attackBtn) this.combatSystem.playerAttack('normalAttack');
+      if (gameObject === skillBtn) this.combatSystem.playerAttack('powerStrike');
     });
 
     this.input.on('gameobjectup', (_pointer: Phaser.Input.Pointer, gameObject: Phaser.GameObjects.GameObject) => {
       if (gameObject === leftBtn) this.player.setTouchInput('left', false);
       if (gameObject === rightBtn) this.player.setTouchInput('right', false);
+      if (gameObject === upBtn) this.cursors.up.isDown = false;
       if (gameObject === jumpBtn) this.player.setTouchInput('jump', false);
     });
   }

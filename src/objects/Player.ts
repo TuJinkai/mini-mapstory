@@ -1,18 +1,36 @@
 import { Physics } from 'phaser';
-import { GRAVITY, PLAYER_SPEED, PLAYER_JUMP_VELOCITY, PLAYER_CLIMB_SPEED, PLAYER_DISPLAY_H } from '../utils/constants';
+import { GRAVITY, PLAYER_SPEED, PLAYER_JUMP_VELOCITY, PLAYER_CLIMB_SPEED, PLAYER_DISPLAY_H, HURT_INVINCIBLE_TIME } from '../utils/constants';
 
 type TouchInput = { left: boolean; right: boolean; jump: boolean };
 
-const CHAR_ORIG_W = 474;
+export interface PlayerStats {
+  hp: number;
+  maxHp: number;
+  mp: number;
+  maxMp: number;
+  atk: number;
+  def: number;
+  critRate: number;
+}
+
+const INITIAL_PLAYER_STATS: PlayerStats = {
+  hp: 100, maxHp: 100,
+  mp: 80, maxMp: 80,
+  atk: 15, def: 5,
+  critRate: 0.1,
+};
+
+const CHAR_ORIG_W = 1017;  // 最大帧宽度（attack2 缩放后）
 const CHAR_ORIG_H = 632;
 const DISPLAY_SCALE = PLAYER_DISPLAY_H / CHAR_ORIG_H;
 // 攀爬时的缩放比例（比正常稍小）
 const CLIMB_SCALE = 0.8;
 // 碰撞体参数（源像素 = 帧坐标，Phaser setSize/setOffset 使用此坐标系）
+// 角色在各帧中居中，碰撞体也居中
 const BODY_W = Math.round(28 / DISPLAY_SCALE);  // 显示28px → ≈277源像素
 const BODY_H = Math.round(48 / DISPLAY_SCALE);  // 显示48px → ≈474源像素
-const BODY_OFFSET_X = Math.round((CHAR_ORIG_W - BODY_W) / 2);  // 水平居中 ≈99
-const BODY_OFFSET_Y = CHAR_ORIG_H - BODY_H;  // 贴底部 =158
+const BODY_OFFSET_X = Math.round((CHAR_ORIG_W - BODY_W) / 2);  // 水平居中
+const BODY_OFFSET_Y = CHAR_ORIG_H - BODY_H;  // 贴底部
 
 export class Player extends Physics.Arcade.Sprite {
   private touchInput: TouchInput = { left: false, right: false, jump: false };
@@ -23,8 +41,13 @@ export class Player extends Physics.Arcade.Sprite {
   private nearLadder = false;
   private ladderCenterX = 0;
   private ladderTopY = 0;
-  private ladderVisualTopY = 0;  // 虚拟延伸顶部
-  private climbAnimTimer = 0;  // 攀爬动画计时器
+  private ladderVisualTopY = 0;
+  private climbAnimTimer = 0;
+
+  private stats: PlayerStats = { ...INITIAL_PLAYER_STATS };
+  private isAttacking = false;
+  private isDead = false;
+  private lastHurtTime = 0;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
     super(scene, x, y, 'player');
@@ -203,6 +226,8 @@ export class Player extends Physics.Arcade.Sprite {
   }
 
   private updateAnimation(onGround: boolean) {
+    if (this.isAttacking) return;
+
     if (!onGround) {
       this.play('player_jump', true);
     } else if (Math.abs(this.getBody().velocity.x) > 10) {
@@ -220,5 +245,111 @@ export class Player extends Physics.Arcade.Sprite {
 
   private getBody(): Phaser.Physics.Arcade.Body {
     return this.body as Phaser.Physics.Arcade.Body;
+  }
+
+  // ===== 战斗相关方法 =====
+  takeDamage(amount: number): void {
+    if (this.isDead) return;
+
+    const time = this.scene.time.now;
+    if (time - this.lastHurtTime < HURT_INVINCIBLE_TIME) return;
+
+    this.stats.hp -= amount;
+    this.lastHurtTime = time;
+
+    // 受击闪烁效果
+    this.setTint(0xff4444);
+    this.scene.time.delayedCall(100, () => {
+      if (!this.isDead) this.clearTint();
+    });
+
+    // 发射受伤事件
+    this.scene.events.emit('player-hurt', { damage: amount, hp: this.stats.hp, maxHp: this.stats.maxHp });
+
+    if (this.stats.hp <= 0) {
+      this.stats.hp = 0;
+      this.die();
+    }
+  }
+
+  addStats(bonus: { maxHp?: number; maxMp?: number; atk?: number; def?: number }): void {
+    if (bonus.maxHp) {
+      this.stats.maxHp += bonus.maxHp;
+      this.stats.hp += bonus.maxHp;
+    }
+    if (bonus.maxMp) {
+      this.stats.maxMp += bonus.maxMp;
+      this.stats.mp += bonus.maxMp;
+    }
+    if (bonus.atk) this.stats.atk += bonus.atk;
+    if (bonus.def) this.stats.def += bonus.def;
+  }
+
+  heal(hpAmount: number, mpAmount: number): void {
+    this.stats.hp = Math.min(this.stats.hp + hpAmount, this.stats.maxHp);
+    this.stats.mp = Math.min(this.stats.mp + mpAmount, this.stats.maxMp);
+  }
+
+  fullHeal(): void {
+    this.stats.hp = this.stats.maxHp;
+    this.stats.mp = this.stats.maxMp;
+  }
+
+  useMp(amount: number): boolean {
+    if (this.stats.mp < amount) return false;
+    this.stats.mp -= amount;
+    return true;
+  }
+
+  regenMp(amount: number): void {
+    this.stats.mp = Math.min(this.stats.mp + amount, this.stats.maxMp);
+  }
+
+  getStats(): PlayerStats {
+    return this.stats;
+  }
+
+  isAlive(): boolean {
+    return !this.isDead && this.stats.hp > 0;
+  }
+
+  private die(): void {
+    this.isDead = true;
+    this.getBody().setVelocity(0, 0);
+    this.play('player_idle');
+    this.setTint(0x888888);
+
+    this.scene.events.emit('player-death');
+  }
+
+  attack(): boolean {
+    if (this.isAttacking || this.isDead || this.climbing) return false;
+
+    this.isAttacking = true;
+    this.play('player_attack', true);
+
+    // 攻击动画结束后恢复
+    this.scene.time.delayedCall(300, () => {
+      this.isAttacking = false;
+    });
+
+    return true;
+  }
+
+  getAttackBox(): Phaser.Geom.Rectangle {
+    const range = 45;
+    const height = 48 * DISPLAY_SCALE;
+    const x = this.facingRight ? this.x : this.x - range;
+    const y = this.y - height / 2;
+
+    return new Phaser.Geom.Rectangle(x, y, range, height);
+  }
+
+  setIsAttacking(value: boolean): void {
+    this.isAttacking = value;
+  }
+
+  isPlayerAttacking(): boolean {
+    return this.isAttacking;
   }
 }

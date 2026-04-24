@@ -1,7 +1,11 @@
 export const GAME_WIDTH = 800;
 export const GAME_HEIGHT = 450;
+export const BG_ORIG_W = 1774;
+export const BG_ORIG_H = 887;
+export const WORLD_WIDTH = Math.round(BG_ORIG_W * GAME_HEIGHT / BG_ORIG_H);
 export const GRAVITY = 1200;
 export const PLAYER_SPEED = 250;
 export const PLAYER_JUMP_VELOCITY = -520;
 export const PLAYER_CLIMB_SPEED = 150;
+export const PLAYER_DISPLAY_H = 64;
 export const BG_COLOR = '#1a1a2e';

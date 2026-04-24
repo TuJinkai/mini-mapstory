@@ -38,49 +38,47 @@ export class BootScene extends Scene {
       text.destroy();
     });
 
-    this.generatePlaceholderAssets();
+    this.load.image('bg001', 'src/assets/images/bg001.png');
+    this.load.image('pt001', 'src/assets/images/pt001.png');
+    this.load.image('pt002', 'src/assets/images/pt002.png');
+    this.load.image('tizi01', 'src/assets/images/tizi01.png');
+    this.load.image('char_stand', 'src/assets/images/stand_left.png');
+    this.load.image('char_run', 'src/assets/images/run_left.png');
+    this.load.image('char_run_end', 'src/assets/images/run_end_left.png');
   }
 
   create() {
+    this.createPlayerAnimations();
     this.scene.start('PlayScene');
   }
 
-  private generatePlaceholderAssets() {
-    this.createPlayerSpritesheet();
-    this.createPlatformGraphics();
-    this.createLadderGraphics();
-    this.createBackgroundGraphics();
-  }
+  private createPlayerAnimations() {
+    // 用3张图拼成一个 spritesheet 作为动画帧
+    // 素材 474x632，取合理裁剪区域后缩放
+    const srcW = 474;
+    const srcH = 632;
+    const frameW = srcW;
+    const frameH = srcH;
+    const totalFrames = 3;
 
-  private createPlayerSpritesheet() {
-    const w = 32;
-    const h = 48;
-    const frames = 4;
     const canvas = document.createElement('canvas');
-    canvas.width = w * frames;
-    canvas.height = h;
+    canvas.width = frameW * totalFrames;
+    canvas.height = frameH;
     const ctx = canvas.getContext('2d')!;
 
-    const colors = [0x6c63ff, 0x7c73ff, 0x6c63ff, 0x5c53ef];
-    for (let i = 0; i < frames; i++) {
-      ctx.fillStyle = `#${colors[i].toString(16).padStart(6, '0')}`;
-      ctx.fillRect(i * w + 8, 0, 16, 20);
-
-      ctx.fillStyle = '#ffcc88';
-      ctx.fillRect(i * w + 10, 4, 12, 12);
-
-      ctx.fillStyle = `#${colors[i].toString(16).padStart(6, '0')}`;
-      ctx.fillRect(i * w + 6, 20, 20, 16);
-
-      ctx.fillStyle = '#4444aa';
-      ctx.fillRect(i * w + 8, 36, 8, 12);
-      ctx.fillRect(i * w + 18, 36, 8, 12);
+    // 从已加载的纹理中提取像素绘制到 canvas
+    const keys = ['char_stand', 'char_run', 'char_run_end'];
+    for (let i = 0; i < keys.length; i++) {
+      const tex = this.textures.get(keys[i]);
+      const src = tex.getSourceImage() as HTMLImageElement;
+      ctx.drawImage(src, i * frameW, 0);
     }
 
     const texture = this.textures.addCanvas('player', canvas)!;
-    for (let i = 0; i < frames; i++) {
-      texture.add(i, 0, i * w, 0, w, h);
+    for (let i = 0; i < totalFrames; i++) {
+      texture.add(i, 0, i * frameW, 0, frameW, frameH);
     }
+
     this.anims.create({
       key: 'player_idle',
       frames: this.anims.generateFrameNumbers('player', { start: 0, end: 0 }),
@@ -89,8 +87,8 @@ export class BootScene extends Scene {
     });
     this.anims.create({
       key: 'player_walk',
-      frames: this.anims.generateFrameNumbers('player', { start: 0, end: 3 }),
-      frameRate: 8,
+      frames: this.anims.generateFrameNumbers('player', { start: 1, end: 2 }),
+      frameRate: 6,
       repeat: -1,
     });
     this.anims.create({
@@ -99,59 +97,5 @@ export class BootScene extends Scene {
       frameRate: 8,
       repeat: -1,
     });
-  }
-
-  private createPlatformGraphics() {
-    const g = this.add.graphics();
-    g.fillStyle(0x4a7c59, 1);
-    g.fillRect(0, 0, 64, 16);
-    g.fillStyle(0x5a9c69, 1);
-    g.fillRect(0, 0, 64, 4);
-    g.generateTexture('platform', 64, 16);
-    g.destroy();
-  }
-
-  private createLadderGraphics() {
-    const canvas = document.createElement('canvas');
-    canvas.width = 20;
-    canvas.height = 64;
-    const ctx = canvas.getContext('2d')!;
-
-    ctx.fillStyle = '#8B6914';
-    ctx.fillRect(0, 0, 3, 64);
-    ctx.fillRect(17, 0, 3, 64);
-
-    ctx.fillStyle = '#A07828';
-    for (let y = 6; y < 64; y += 12) {
-      ctx.fillRect(3, y, 14, 2);
-    }
-
-    this.textures.addCanvas('ladder', canvas);
-  }
-
-  private createBackgroundGraphics() {
-    const canvas = document.createElement('canvas');
-    canvas.width = GAME_WIDTH;
-    canvas.height = GAME_HEIGHT;
-    const ctx = canvas.getContext('2d')!;
-
-    const gradient = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT);
-    gradient.addColorStop(0, '#1a1a3e');
-    gradient.addColorStop(0.5, '#2a2a5e');
-    gradient.addColorStop(1, '#3a4a6e');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
-
-    ctx.fillStyle = '#ffffff';
-    for (let i = 0; i < 50; i++) {
-      const sx = Math.random() * GAME_WIDTH;
-      const sy = Math.random() * GAME_HEIGHT * 0.6;
-      const sr = Math.random() * 2;
-      ctx.beginPath();
-      ctx.arc(sx, sy, sr, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    this.textures.addCanvas('background', canvas);
   }
 }

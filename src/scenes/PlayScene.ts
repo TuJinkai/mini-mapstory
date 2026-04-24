@@ -1,6 +1,6 @@
 import { Scene } from 'phaser';
 import { Player } from '../objects/Player';
-import { GAME_WIDTH, GAME_HEIGHT } from '../utils/constants';
+import { GAME_WIDTH, GAME_HEIGHT, WORLD_WIDTH } from '../utils/constants';
 
 interface LadderZone {
   x: number;
@@ -21,20 +21,25 @@ export class PlayScene extends Scene {
   }
 
   create() {
-    this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, 'background');
+    // 背景图：1774x887，缩放到游戏高度并铺满世界宽度
+    const bg = this.add.image(0, 0, 'bg001');
+    bg.setOrigin(0, 0);
+    const bgScale = GAME_HEIGHT / 887;
+    bg.setScale(bgScale);
 
     this.player = new Player(this, 100, GAME_HEIGHT - 60);
     this.createPlatforms();
     this.createLadders();
 
     this.physics.add.collider(this.player, this.platforms);
+    this.physics.world.setBounds(0, 0, WORLD_WIDTH, GAME_HEIGHT);
 
     this.cursors = this.input.keyboard!.createCursorKeys();
     this.spaceKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 
     this.scene.launch('UIScene');
 
-    this.cameras.main.setBounds(0, 0, GAME_WIDTH, GAME_HEIGHT);
+    this.cameras.main.setBounds(0, 0, WORLD_WIDTH, GAME_HEIGHT);
     this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
 
     this.createTouchControls();
@@ -55,7 +60,6 @@ export class PlayScene extends Scene {
 
     for (const z of this.ladderZones) {
       const inX = Math.abs(px - z.x) < z.halfWidth + 10;
-      // 虚拟空间向上延伸30px，人物大部分爬过梯子顶端即可
       const inY = py > z.topY - 30 && py < z.bottomY + 20;
       if (inX && inY) {
         found = true;
@@ -74,47 +78,58 @@ export class PlayScene extends Scene {
   private createPlatforms() {
     this.platforms = this.physics.add.staticGroup();
 
-    this.platforms.create(GAME_WIDTH / 2, GAME_HEIGHT - 8, 'platform')
-      .setDisplaySize(GAME_WIDTH, 16)
+    // 全局地面（不可见，仅碰撞）
+    const ground = this.platforms.create(WORLD_WIDTH / 2, GAME_HEIGHT - 8, 'pt001')
+      .setDisplaySize(WORLD_WIDTH, 16)
       .refreshBody();
+    ground.setVisible(false);
 
-    const platformData = [
-      { x: 120, y: 300 },
-      { x: 350, y: 240 },
-      { x: 580, y: 300 },
-      { x: 200, y: 170 },
-      { x: 450, y: 130 },
-      { x: 680, y: 180 },
+    // 浮动平台，每个指定显示宽高
+    // offsetY: 碰撞体从精灵顶部向下偏移，让站立面低于视觉顶部
+    const platformData: { x: number; y: number; w: number; h: number; offsetY: number }[] = [
+      { x: 120, y: 300, w: 120, h: 40, offsetY: 10 },
+      { x: 350, y: 240, w: 100, h: 36, offsetY: 10 },
+      { x: 580, y: 300, w: 120, h: 40, offsetY: 10 },
+      { x: 200, y: 170, w: 100, h: 36, offsetY: 10 },
+      { x: 450, y: 130, w: 110, h: 36, offsetY: 10 },
+      { x: 680, y: 180, w: 100, h: 36, offsetY: 10 },
+      // 右半区
+      { x: 750, y: 280, w: 120, h: 40, offsetY: 10 },
+      { x: 850, y: 200, w: 100, h: 36, offsetY: 10 },
     ];
 
     for (const p of platformData) {
-      const plat = this.platforms.create(p.x, p.y, 'platform');
-      plat.setScale(1.5, 1).refreshBody();
+      const plat = this.platforms.create(p.x, p.y, 'pt002');
+      plat.setDisplaySize(p.w, p.h).refreshBody();
+      const body = plat.body as Phaser.Physics.Arcade.StaticBody;
+      body.setOffset(0, p.offsetY);
+      body.setSize(plat.displayWidth, p.h - p.offsetY, false);
     }
   }
 
   private createLadders() {
-    // 平台表面 y 值（scale=1.5,1 原始高16，表面 = centerY - 8）：
-    //   地面=434  (120,300)=292  (580,300)=292
-    //   (350,240)=232  (200,170)=162  (450,130)=122  (680,180)=172
     const ladderData = [
+      // 左半区
       { x: 120, bottomY: 434, topY: 292 },
       { x: 580, bottomY: 434, topY: 292 },
       { x: 350, bottomY: 292, topY: 232 },
       { x: 200, bottomY: 292, topY: 162 },
       { x: 450, bottomY: 232, topY: 122 },
       { x: 680, bottomY: 172, topY: 122 },
+      // 右半区
+      { x: 750, bottomY: 434, topY: 272 },
+      { x: 850, bottomY: 272, topY: 192 },
     ];
 
     for (const l of ladderData) {
       const height = l.bottomY - l.topY;
       const centerY = l.topY + height / 2;
 
-      // 只用 sprite 显示，不创建物理体
-      const sprite = this.add.image(l.x, centerY, 'ladder');
-      sprite.setDisplaySize(20, height);
+      // 梯子宽度按素材比例动态计算，高度拉伸到实际间距
+      const ladderWidth = Math.round(169 * height / 866);
+      const sprite = this.add.image(l.x, centerY, 'tizi01');
+      sprite.setDisplaySize(ladderWidth, height);
 
-      // 记录坐标区域用于碰撞检测
       this.ladderZones.push({
         x: l.x,
         topY: l.topY,

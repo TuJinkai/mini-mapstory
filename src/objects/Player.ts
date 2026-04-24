@@ -1,7 +1,16 @@
 import { Physics } from 'phaser';
-import { GRAVITY, PLAYER_SPEED, PLAYER_JUMP_VELOCITY, PLAYER_CLIMB_SPEED } from '../utils/constants';
+import { GRAVITY, PLAYER_SPEED, PLAYER_JUMP_VELOCITY, PLAYER_CLIMB_SPEED, PLAYER_DISPLAY_H } from '../utils/constants';
 
 type TouchInput = { left: boolean; right: boolean; jump: boolean };
+
+const CHAR_ORIG_W = 474;
+const CHAR_ORIG_H = 632;
+const DISPLAY_SCALE = PLAYER_DISPLAY_H / CHAR_ORIG_H;
+// 碰撞体参数（源像素 = 帧坐标，Phaser setSize/setOffset 使用此坐标系）
+const BODY_W = Math.round(28 / DISPLAY_SCALE);  // 显示28px → ≈277源像素
+const BODY_H = Math.round(48 / DISPLAY_SCALE);  // 显示48px → ≈474源像素
+const BODY_OFFSET_X = Math.round((CHAR_ORIG_W - BODY_W) / 2);  // 水平居中 ≈99
+const BODY_OFFSET_Y = CHAR_ORIG_H - BODY_H;  // 贴底部 =158
 
 export class Player extends Physics.Arcade.Sprite {
   private touchInput: TouchInput = { left: false, right: false, jump: false };
@@ -18,10 +27,11 @@ export class Player extends Physics.Arcade.Sprite {
     scene.add.existing(this);
     scene.physics.add.existing(this);
 
+    this.setScale(DISPLAY_SCALE);
     this.setCollideWorldBounds(true);
     this.getBody().setGravityY(GRAVITY);
-    this.getBody().setSize(20, 44);
-    this.getBody().setOffset(6, 4);
+    this.getBody().setSize(BODY_W, BODY_H);
+    this.getBody().setOffset(BODY_OFFSET_X, BODY_OFFSET_Y);
     this.setBounce(0.05);
     this.play('player_idle');
   }
@@ -32,7 +42,6 @@ export class Player extends Physics.Arcade.Sprite {
       this.ladderCenterX = ladderX;
       if (topY !== undefined) this.ladderTopY = topY;
     }
-    // 不在梯子范围时自动退出爬梯
     if (!near && this.climbing) {
       this.exitLadder();
     }
@@ -56,13 +65,11 @@ export class Player extends Physics.Arcade.Sprite {
     const moveLeft = cursors.left.isDown || this.touchInput.left;
     const moveRight = cursors.right.isDown || this.touchInput.right;
 
-    // 按左右离开梯子
     if (moveLeft || moveRight) {
       this.exitLadder();
       return;
     }
 
-    // 手动移动，完全绕过物理碰撞
     const delta = this.scene.game.loop.delta;
     if (upPressed) {
       this.y -= PLAYER_CLIMB_SPEED * delta / 1000;
@@ -70,14 +77,11 @@ export class Player extends Physics.Arcade.Sprite {
       this.y += PLAYER_CLIMB_SPEED * delta / 1000;
     }
 
-    // 对齐梯子x
     this.x = this.ladderCenterX;
 
-    // 爬到顶端：玩家脚底(body bottom = y + 48)到达平台表面
-    // 把玩家放到平台上方的站立位置
-    const bodyBottom = this.y + 48;
+    const bodyBottom = this.y + this.getHalfBodyH();
     if (bodyBottom <= this.ladderTopY) {
-      this.y = this.ladderTopY - 48;
+      this.y = this.ladderTopY - this.getHalfBodyH();
       this.exitLadder();
     }
 
@@ -88,13 +92,11 @@ export class Player extends Physics.Arcade.Sprite {
     const body = this.getBody();
     const onGround = body.blocked.down || body.touching.down;
     const upPressed = cursors.up.isDown;
-    const downPressed = cursors.down.isDown;
 
     let moveLeft = cursors.left.isDown || this.touchInput.left;
     let moveRight = cursors.right.isDown || this.touchInput.right;
     const jump = spaceKey.isDown || this.touchInput.jump;
 
-    // 进入梯子：按上键且靠近梯子
     if (upPressed && this.nearLadder) {
       this.enterLadder();
       return;
@@ -107,11 +109,11 @@ export class Player extends Physics.Arcade.Sprite {
 
     if (moveLeft) {
       body.setVelocityX(-PLAYER_SPEED);
-      this.setFlipX(true);
+      this.setFlipX(false);
       this.facingRight = false;
     } else if (moveRight) {
       body.setVelocityX(PLAYER_SPEED);
-      this.setFlipX(false);
+      this.setFlipX(true);
       this.facingRight = true;
     } else {
       body.setVelocityX(0);
@@ -134,14 +136,14 @@ export class Player extends Physics.Arcade.Sprite {
     const body = this.getBody();
     body.setAllowGravity(false);
     body.setVelocity(0, 0);
-    body.enable = false; // 完全关闭物理体，手动控制坐标
+    body.enable = false;
     this.x = this.ladderCenterX;
   }
 
   private exitLadder() {
     this.climbing = false;
     const body = this.getBody();
-    body.enable = true; // 恢复物理体
+    body.enable = true;
     body.setAllowGravity(true);
     body.setVelocity(0, 0);
   }
@@ -162,6 +164,11 @@ export class Player extends Physics.Arcade.Sprite {
     } else {
       this.play('player_idle', true);
     }
+  }
+
+  // 碰撞体底部相对 sprite 中心的距离（用于爬梯着地计算）
+  private getHalfBodyH(): number {
+    return (BODY_OFFSET_Y + BODY_H - CHAR_ORIG_H / 2) * DISPLAY_SCALE;
   }
 
   private getBody(): Phaser.Physics.Arcade.Body {

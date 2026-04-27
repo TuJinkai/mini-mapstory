@@ -70,12 +70,13 @@ export class MonsterSpawner {
     this.monsterGroup.add(monster);
 
     // 监听怪物死亡
-    this.scene.events.on('monster-death', (deadMonster: Monster) => {
+    const onDeath = (deadMonster: Monster) => {
       if (deadMonster === monster) {
         this.deathTimers.set(spawnPoint.id, this.scene.time.now);
-        this.scene.events.off('monster-death', undefined!, undefined!, false);
+        this.scene.events.off('monster-death', onDeath);
       }
-    });
+    };
+    this.scene.events.on('monster-death', onDeath);
 
     // 发射怪物生成事件
     this.scene.events.emit('monster-spawned', monster);

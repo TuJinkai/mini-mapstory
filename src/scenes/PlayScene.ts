@@ -165,7 +165,7 @@ export class PlayScene extends Scene {
     const stats = this.player.getStats();
     const expInfo = this.expSystem.getExpInfo();
 
-    this.scene.get('UIScene').events.emit('update-stats', {
+    this.events.emit('update-stats', {
       hp: stats.hp,
       maxHp: stats.maxHp,
       mp: stats.mp,
